@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+// IMPORTANTE: Para otimização de imagens, substitua <img> por <Image /> do 'next/image'
 
 export default function SobrePage() {
   return (
@@ -15,6 +16,7 @@ export default function SobrePage() {
 
       {/* Banner em largura total com seta sobreposta */}
       <div className="relative w-full h-80 overflow-hidden mt-4 shadow-soft border-b border-warm">
+        {/* LINT WARNING: Considerar substituir <img> por <Image /> do next/image para otimização */}
         <img
           src="https://images.unsplash.com/photo-1678460737180-01465207e6ef?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
           alt="Banner Sobre"
