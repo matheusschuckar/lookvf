@@ -52,8 +52,9 @@ export default function LouisVuittonPage() {
 
         if (error) throw error;
         setProducts(data ?? []);
-      } catch (err) {
-        console.error("SUPABASE_ERROR", err);
+      } catch (e: unknown) {
+        // CORREÇÃO: tipagem segura para o catch block (e: unknown)
+        console.error("SUPABASE_ERROR", e);
       } finally {
         setLoading(false);
       }
@@ -76,6 +77,7 @@ export default function LouisVuittonPage() {
 
       {/* Banner horizontal */}
       <div className="relative overflow-hidden rounded-3xl">
+        {/* LINT WARNING: Considerar substituir <img> por <Image /> do next/image para otimização */}
         <img
           src="https://images.unsplash.com/photo-1520975922324-9bcd35aa7f84?q=80&w=1600&auto=format&fit=crop"
           alt="Louis Vuitton Editorial"
@@ -134,6 +136,7 @@ export default function LouisVuittonPage() {
               >
                 <div className="relative w-full aspect-[4/5] bg-neutral-50">
                   {firstImage(p.photo_url) ? (
+                    // LINT WARNING: Considerar substituir <img> por <Image /> do next/image para otimização
                     <img
                       src={firstImage(p.photo_url)}
                       alt={p.name}
