@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image"; // CORREÇÃO: Importar Image para otimização
 import { useParams } from "next/navigation";
 
 type AirtableRecord = {
   id: string;
-  fields: Record<string, any>;
+  // CORREÇÃO: Linha 9 - Usar 'unknown' no lugar de 'any'
+  fields: Record<string, unknown>; 
   createdTime?: string;
 };
 
@@ -47,191 +49,253 @@ export default function OrderDetailPage() {
       )}/${recordId}`;
 
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
         cache: "no-store",
       });
+
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Airtable ${res.status}: ${text}`);
       }
+
       const data = (await res.json()) as AirtableRecord;
       setOrder(data);
-      setErr(null);
     } catch (e: unknown) {
-      // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
-      setErr((e instanceof Error ? e.message : undefined) ?? "Erro ao carregar pedido");
+      setErr((e instanceof Error ? e.message : undefined) ?? "Erro ao carregar pedido.");
+    } finally {
+      setLoading(false);
+      setReloading(false);
     }
   }
 
+  // Reload quando o ID muda e no intervalo
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await fetchOrder();
-      setLoading(false);
-    })();
-    // só quando o id mudar
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordId]);
+    fetchOrder();
+    const interval = setInterval(() => {
+      setReloading(true);
+      fetchOrder();
+    }, 15000); // Recarrega a cada 15s
 
-  const f = order?.fields || {};
-  const status = f["Status"] ?? "—";
-  const isPaid = String(status).trim().toLowerCase() === "pago";
+    return () => clearInterval(interval);
+  }, [recordId, apiKey, baseId, tableName]);
 
-  const total = typeof f["Total"] === "number" ? f["Total"] : null;
-  const delivery =
-    typeof f["Delivery Fee"] === "number" ? f["Delivery Fee"] : null;
-  const itemPrice =
-    typeof f["Item Price"] === "number" ? f["Item Price"] : null;
-  const created =
-    f["Created At"] || order?.createdTime
-      ? new Date(
-          f["Created At"] || (order?.createdTime as string)
-        ).toLocaleString("pt-BR")
-      : "—";
-  const pixCode = f["PIX Code"] as string | undefined;
+  if (loading) {
+    return <main className="min-h-screen bg-white" />;
+  }
+  if (err) {
+    return (
+      <main className="min-h-screen bg-white max-w-md mx-auto p-5 pt-10">
+        <p className="text-sm text-red-600">{err}</p>
+        <Link href="/orders" className="mt-4 text-sm text-black underline">
+          Voltar para Pedidos
+        </Link>
+      </main>
+    );
+  }
+  if (!order) {
+    return (
+      <main className="min-h-screen bg-white max-w-md mx-auto p-5 pt-10">
+        <p className="text-sm text-gray-600">Pedido não encontrado.</p>
+        <Link href="/orders" className="mt-4 text-sm text-black underline">
+          Voltar para Pedidos
+        </Link>
+      </main>
+    );
+  }
 
-  const itemsFromNotes: string[] =
-    typeof f["Notes"] === "string"
-      ? f["Notes"]
-          .split("\n")
-          .filter((line: string) => line.trim().startsWith("•"))
-      : [];
+  const { fields } = order;
+  const status = (fields.Status as string | undefined) ?? "novo";
+  const total = (fields.Total as number | undefined) ?? 0;
+  const notes = (fields.Notes as string | undefined) ?? "";
+  const createdAt = order.createdTime;
+
+  // Extrair itens (fallback)
+  function getItems() {
+    const jsonItems = (fields.Items || fields.items || fields.products) as string | unknown[] | null | undefined;
+    if (typeof jsonItems === "string") {
+      try {
+        const parsed = JSON.parse(jsonItems) as { name: string; qty: number; photo_url?: string; }[];
+        return parsed.map((item) => ({
+          name: item.name,
+          qty: item.qty,
+          photo_url: item.photo_url,
+        }));
+      } catch {
+        return [];
+      }
+    }
+    if (Array.isArray(jsonItems)) {
+        // Tentativa de inferir a estrutura de um array simples de objetos (sem tipagem Airtable)
+        return jsonItems.map((item: unknown) => ({
+            name: (item as { name: string })?.name || "Item",
+            qty: (item as { qty: number })?.qty || 1,
+            photo_url: (item as { photo_url: string })?.photo_url,
+        }));
+    }
+    return [];
+  }
+  const items = getItems();
+
+  const isPixPending = status.toLowerCase() === "novo"; // PIX é gerado apenas no status "novo"
+  const pixCode = (fields.pix_code as string | undefined) ?? "";
+
+  function formatBRL(v?: number) {
+    try {
+      return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v ?? 0);
+    } catch {
+      return `R$ ${(v ?? 0).toFixed(2)}`;
+    }
+  }
 
   return (
-    <main className="p-4 max-w-md mx-auto">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-semibold">Pedido</h1>
-        <Link href="/orders" className="text-sm underline">
+    <main className="bg-white text-black max-w-md mx-auto min-h-screen p-5">
+      <div className="pt-6 flex items-center justify-between">
+        <h1 className="text-[28px] leading-7 font-bold tracking-tight">
+          Pedido {recordId.slice(0, 8)}
+        </h1>
+        <Link
+          href="/orders"
+          className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-sm hover:bg-gray-50"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            fill="none"
+          >
+            <path
+              d="M15 18l-6-6 6-6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           Voltar
         </Link>
       </div>
 
-      {loading && <p>Carregando…</p>}
-      {err && <p className="text-sm text-red-600">{err}</p>}
+      <div className="mt-4 flex flex-col gap-1 text-sm">
+        <p>
+          Status: <span className="font-semibold capitalize">{status}</span>
+          {reloading && (
+            <span className="text-xs text-gray-500 ml-2">(checking…)</span>
+          )}
+        </p>
+        <p>
+          Total: <span className="font-semibold">{formatBRL(total)}</span>
+        </p>
+        {createdAt && (
+          <p>
+            Criado em:{" "}
+            <span className="font-semibold">
+              {new Date(createdAt).toLocaleDateString("pt-BR", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </span>
+          </p>
+        )}
+      </div>
 
-      {!loading && order && (
-        <div className="space-y-4">
-          <div className="rounded-xl border p-4 bg-white">
-            <div className="text-sm">
-              <div className="flex justify-between">
-                <span>ID</span>
-                <span className="font-mono">#{order.id}</span>
+      {notes && (
+        <div className="mt-4 p-3 rounded-lg bg-neutral-50 border border-neutral-200 text-sm">
+          <p className="font-medium mb-1">Observações do Pedido:</p>
+          <p className="text-gray-600 whitespace-pre-wrap">{notes}</p>
+        </div>
+      )}
+
+      {/* Itens do Pedido */}
+      <h2 className="text-xl font-bold mt-6 mb-3">Itens</h2>
+      <div className="space-y-4">
+        {items.map((item, index) => {
+          const thumb = item.photo_url || "";
+          const qty = item.qty || 1;
+
+          return (
+            <div key={index} className="flex gap-4 p-3 rounded-xl border">
+              <div className="relative h-20 w-20 rounded-lg overflow-hidden bg-neutral-100 shrink-0">
+                {thumb ? (
+                  <Image // CORREÇÃO: Linha 199 - Uso de <Image />
+                    src={thumb}
+                    alt={item.name || "Produto"}
+                    fill
+                    sizes="80px"
+                    className="object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-neutral-400 text-sm">
+                    📦
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span>Criado</span>
-                <span>{created}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Status</span>
-                <span className="font-semibold">{status}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Itens</span>
-                <span>R$ {itemPrice?.toFixed(2) ?? "—"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Frete</span>
-                <span>R$ {delivery?.toFixed(2) ?? "—"}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span>Total</span>
-                <span>R$ {total?.toFixed(2) ?? "—"}</span>
+              <div>
+                <p className="text-sm font-semibold">{item.name}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Qty: {qty}
+                </p>
+                {item.store_name && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Loja: {item.store_name}
+                  </p>
+                )}
               </div>
             </div>
+          );
+        })}
+      </div>
 
+      {/* PIX Payment Info */}
+      {isPixPending && pixCode && (
+        <div className="mt-8 p-5 rounded-xl bg-yellow-50 border border-yellow-200">
+          <h2 className="text-xl font-bold text-yellow-800 mb-4">
+            Aguardando pagamento PIX
+          </h2>
+          <p className="text-xs text-gray-700 mb-3">
+            Use o QR abaixo ou copie o código para pagar.
+          </p>
+          <div className="flex justify-center">
+            <div className="relative h-[220px] w-[220px]"> {/* CORREÇÃO: Adicionar div para Image */}
+              <Image
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                  pixCode
+                )}`}
+                alt="QR Code PIX"
+                width={220}
+                height={220}
+                className="rounded-lg"
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="text-xs text-gray-600">
+              Copia e cola PIX
+            </label>
+            <textarea
+              className="w-full rounded-md border p-2 text-xs"
+              rows={4}
+              readOnly
+              value={pixCode}
+            />
             <button
               onClick={async () => {
-                setReloading(true);
-                await fetchOrder();
-                setReloading(false);
+                try {
+                  await navigator.clipboard.writeText(pixCode);
+                  alert("Código PIX copiado!");
+                } catch {
+                  alert(
+                    "Não foi possível copiar. Selecione e copie manualmente."
+                  );
+                }
               }}
-              className="mt-3 rounded-lg border px-3 py-2 text-sm"
-              disabled={reloading}
+              className="mt-2 rounded-lg bg-black text-white px-3 py-2 text-sm font-semibold"
             >
-              {reloading ? "Atualizando…" : "Atualizar status"}
+              Copiar código
             </button>
           </div>
-
-          <div className="rounded-xl border p-4 bg-white">
-            <h2 className="text-lg font-semibold mb-2">Itens</h2>
-
-            {Array.isArray(f["Product Name"]) ||
-            typeof f["Product Name"] === "string" ? (
-              <ul className="list-disc ml-5 text-sm space-y-1">
-                {String(f["Product Name"])
-                  .split("|")
-                  .map((n) => n.trim())
-                  .filter(Boolean)
-                  .map((name, idx) => {
-                    const sizes = String(f["Size"] || "")
-                      .split(",")
-                      .map((s) => s.trim());
-                    const stores = String(f["Store Name"] || "")
-                      .split(",")
-                      .map((s) => s.trim());
-                    return (
-                      <li key={idx}>
-                        {name}
-                        {stores[idx] ? ` — ${stores[idx]}` : ""}
-                        {sizes[idx] ? ` — Size ${sizes[idx]}` : ""}
-                      </li>
-                    );
-                  })}
-              </ul>
-            ) : itemsFromNotes.length > 0 ? (
-              <ul className="list-disc ml-5 text-sm space-y-1">
-                {itemsFromNotes.map((line, i) => (
-                  <li key={i}>{line.replace(/^•\s*/, "")}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-600">Sem itens cadastrados.</p>
-            )}
-          </div>
-
-          {pixCode && !isPaid && (
-            <div className="rounded-xl border p-4 bg-white">
-              <h2 className="text-lg font-semibold mb-2">Pagamento PIX</h2>
-              <p className="text-xs text-gray-700 mb-3">
-                Use o QR abaixo ou copie o código para pagar.
-              </p>
-              <div className="flex justify-center">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                    pixCode
-                  )}`}
-                  alt="QR Code PIX"
-                  className="rounded-lg"
-                />
-              </div>
-              <div className="mt-3">
-                <label className="text-xs text-gray-600">
-                  Copia e cola PIX
-                </label>
-                <textarea
-                  className="w-full rounded-md border p-2 text-xs"
-                  rows={4}
-                  readOnly
-                  value={pixCode}
-                />
-                <button
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(pixCode);
-                      alert("Código PIX copiado!");
-                    } catch {
-                      alert(
-                        "Não foi possível copiar. Selecione e copie manualmente."
-                      );
-                    }
-                  }}
-                  className="mt-2 rounded-lg bg-black text-white px-3 py-2 text-sm font-semibold"
-                >
-                  Copiar código
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </main>
