@@ -29,7 +29,7 @@ function cepValid(cep: string) {
   return onlyDigits(cep).length === 8;
 }
 function cpfValid(cpf: string) {
-  const s = onlyDigits(cpf); // CORREÇÃO: Variável 's' agora é 'const'
+  const s = onlyDigits(cpf);
   if (s.length !== 11) return false;
   if (/^(\d)\1+$/.test(s)) return false;
   let sum = 0;
@@ -70,7 +70,8 @@ async function fetchCities(uf: string) {
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return data.map((c: any) => c.nome) as string[];
+    // CORREÇÃO: Linha 73 - Especificar o tipo do objeto da cidade
+    return data.map((c: { nome: string }) => c.nome) as string[]; 
   } catch {
     return [];
   }
@@ -160,7 +161,7 @@ function ProfilePageInner() {
           setCep(p.cep ?? "");
           setCpf(p.cpf ?? "");
         }
-      } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      } catch (e: unknown) { 
         setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível carregar seu perfil");
       } finally {
         setLoading(false);
@@ -248,7 +249,7 @@ function ProfilePageInner() {
 
       setOk("Perfil salvo com sucesso.");
       setTimeout(() => router.replace(next), 350);
-    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+    } catch (e: unknown) { 
       setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível salvar seu perfil");
     } finally {
       setSaving(false);
@@ -398,33 +399,7 @@ function ProfilePageInner() {
                 >
                   <option value="">Selecione</option>
                   {[
-                    "AC",
-                    "AL",
-                    "AP",
-                    "AM",
-                    "BA",
-                    "CE",
-                    "DF",
-                    "ES",
-                    "GO",
-                    "MA",
-                    "MT",
-                    "MS",
-                    "MG",
-                    "PA",
-                    "PB",
-                    "PR",
-                    "PE",
-                    "PI",
-                    "RJ",
-                    "RN",
-                    "RS",
-                    "RO",
-                    "RR",
-                    "SC",
-                    "SP",
-                    "SE",
-                    "TO",
+                    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
                   ].map((uf) => (
                     <option key={uf} value={uf}>
                       {uf}
