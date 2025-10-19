@@ -88,8 +88,8 @@ export default function SavedPage() {
         // 3) contagens
         const counts = await countPerProducts(ids);
         setLikeCounts(counts);
-      } catch (e: any) {
-        setErr(e?.message ?? "Não foi possível carregar seus salvos");
+      } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+        setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível carregar seus salvos");
       } finally {
         setLoading(false);
       }
@@ -138,7 +138,7 @@ export default function SavedPage() {
         .eq("product_id", pid)
         .eq("user_id", userId);
       if (error) throw error;
-    } catch (e) {
+    } catch (e: unknown) { // CORREÇÃO: tipagem explícita para o catch block
       // rollback
       setProducts(prevProds);
       setLikeRows(prevRows);
