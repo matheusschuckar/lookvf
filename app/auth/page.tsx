@@ -70,8 +70,11 @@ function AuthInner() {
         }
         router.replace(`/profile?next=${encodeURIComponent(nextRaw)}`);
       }
-    } catch (e: any) {
-      setErr(e?.message || "Algo deu errado. Tente novamente.");
+    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      setErr(
+        (e instanceof Error ? e.message : undefined) ??
+          "Algo deu errado. Tente novamente."
+      );
     } finally {
       setLoading(false);
     }
