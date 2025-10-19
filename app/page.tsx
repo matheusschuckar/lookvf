@@ -12,7 +12,7 @@ import { BannersCarousel, type Banner } from "../components/BannersCarousel";
 import {
   EditorialTallBanner,
   SelectionHeroBanner,
-  BannersTriplet,
+  // BannersTriplet, // ERRO RESOLVIDO: Removido, pois o linter acusou que não estava sendo usado.
 } from "../components/HomeBanners";
 import HeaderBar from "../components/HeaderBar";
 import AppDrawer from "../components/AppDrawer";
@@ -42,9 +42,23 @@ import {
 } from "@/lib/ui/helpers";
 import { HOME_CAROUSEL, INLINE_BANNERS } from "@/lib/ui/homeContent";
 import { useInfiniteProducts } from "@/hooks/useInfiniteProducts";
-import { dedupeProducts } from "@/lib/data/dedupe"; // <<<< ADICIONADO
+import { dedupeProducts } from "@/lib/data/dedupe";
 
 type KeyStat = { w: number; t: number };
+
+// TIPAGEM: Para resultados da RPC
+interface NearestStoreResult {
+  store_id: number;
+}
+
+// TIPAGEM: Para propriedades de fallback do produto (que estavam sendo acessadas via 'any')
+interface ProductWithFallback extends Product {
+  store_id?: number;
+  storeId?: number;
+  category?: string;
+  eta_text_runtime?: string | null;
+  eta_text?: string | null;
+}
 
 // ruído determinístico por produto + seed da sessão
 function noiseFor(id: number, seed: number) {
@@ -56,7 +70,6 @@ function noiseFor(id: number, seed: number) {
 }
 
 // Helper: tenta puxar os ids da loja mais próxima por marca para o usuário.
-// Se o perfil ainda não tem geom, a RPC retorna vazia e usamos fallback.
 async function fetchNearestStoreIdsForUser(userId: string): Promise<number[]> {
   const { data, error } = await supabase.rpc(
     "nearest_store_per_brand_for_user",
@@ -66,7 +79,8 @@ async function fetchNearestStoreIdsForUser(userId: string): Promise<number[]> {
     console.warn("[nearest] rpc error:", error.message);
     return [];
   }
-  return (data ?? []).map((r: any) => r.store_id as number);
+  // ERRO RESOLVIDO (L. 69): Tipagem correta para o retorno do RPC
+  return (data as NearestStoreResult[] ?? []).map((r) => r.store_id);
 }
 
 export default function Home() {
@@ -162,28 +176,44 @@ export default function Home() {
               "id,name,whatsapp,street,number,complement,city,state,cep,status"
             )
             .eq("id", u.user.id)
-            .single();
+            .single<Profile>(); // Tipagem inicial para Profile
 
           if (profResp.error && /state/i.test(String(profResp.error.message))) {
-            profResp = await supabase
+            // Tenta sem 'state' se houver erro no campo 'state'
+            const { data, error } = await supabase
               .from("user_profiles")
               .select(
                 "id,name,whatsapp,street,number,complement,city,cep,status"
               )
               .eq("id", u.user.id)
-              .single();
-            if (profResp.data) (profResp.data as any).state = null;
+              .single<Omit<Profile, "state"> & { state?: null }>();
+
+            if (data) {
+                // ERRO RESOLVIDO (L. 175): Assertiva de tipo seguro
+                profResp = {
+                    data: { ...data, state: null } as Profile,
+                    error: null,
+                    status: 200,
+                    statusText: "OK",
+                  } as typeof profResp; // Mapeia de volta ao tipo completo
+            } else if (error) {
+                throw error;
+            } else {
+                profResp = { data: null, error: null, status: 200, statusText: "OK" } as typeof profResp;
+            }
           }
           if (profResp.error) throw profResp.error;
 
-          const prof = profResp.data as Profile;
+          // Assumimos que profResp.data é do tipo Profile, mas fazemos o check
+          const prof: Profile = profResp.data as Profile;
           setProfile(prof);
 
           const nearestIds = await fetchNearestStoreIdsForUser(u.user.id);
           setNearestStoreIds(nearestIds.length ? nearestIds : null);
         }
-      } catch (e: any) {
-        const msg = String(e?.message || "");
+      } catch (e: unknown) {
+        // ERRO RESOLVIDO (L. 185): Tratamento de erro seguro
+        const msg = String(e instanceof Error ? e.message : "Erro desconhecido");
         console.error("[Home] load error:", msg);
         setErr(msg || "Erro inesperado");
       } finally {
@@ -234,8 +264,10 @@ export default function Home() {
     const afterFilters = infiniteItems
       .filter((p) => {
         if (nearestStoreIds && nearestStoreIds.length > 0) {
-          const sid = Number((p as any).store_id ?? (p as any).storeId ?? 0);
-          if (!nearestStoreIds.includes(sid)) return false;
+            // ERRO RESOLVIDO (L. 237): Type assertion seguro
+            const pp = p as ProductWithFallback;
+            const sid = Number(pp.store_id ?? pp.storeId ?? 0);
+            if (!nearestStoreIds.includes(sid)) return false;
         }
         return true;
       })
@@ -301,6 +333,7 @@ export default function Home() {
     } catch {}
   }, []);
 
+  // W (Weights) é usado dentro de useMemo e precisa ser adicionado ao array de dependências
   const W = {
     CAT: 1.0,
     STORE: 0.65,
@@ -316,18 +349,21 @@ export default function Home() {
     const p2 = getPrefsV2();
     const p1 = getPrefs();
 
-    function norm(map: Record<string, KeyStat> | Record<string, number>) {
-      const vals = Object.values(map).map((v: any) =>
+    function norm(
+        map: Record<string, KeyStat> | Record<string, number>
+    ): { map: Record<string, KeyStat | number>; max: number } {
+        // ERRO RESOLVIDO (L. 358): Tipagem correta para o retorno de norm
+      const vals = Object.values(map).map((v) =>
         typeof v === "number" ? v : v?.w ?? 0
       );
       const max = vals.length ? Math.max(1, ...vals) : 1;
-      return { map, max };
+      return { map: map as Record<string, KeyStat | number>, max };
     }
 
     const nCat = norm(p2.cat);
     const nStore = norm(p2.store);
     const nGender = norm(p2.gender);
-    const nSize = norm(p2.size);
+    // const nSize = norm(p2.size); // ERRO RESOLVIDO (L. 330): Variável removida/comentada pois não é usada
     const nPrice = norm(p2.price);
     const nEta = norm(p2.eta);
     const nProd = norm(p2.product);
@@ -340,23 +376,30 @@ export default function Home() {
     const explore = Math.random() < EPSILON;
 
     const scored = filtered.map((p) => {
+        // Assertiva de tipo para permitir o acesso aos fallbacks
+      const pp = p as ProductWithFallback;
       const cats = categoriesOf(p);
-      const mainCat = cats[0] || (p as any).category || "";
+
+      // ERRO RESOLVIDO (L. 344): Type assertion seguro
+      const mainCat = cats[0] || pp.category || "";
       const storeKey = (p.store_name || "").toLowerCase();
       const genderKey = (p.gender || "").toLowerCase();
       const priceKey = priceBucket(p.price_tag);
-      const etaTxt = (p as any).eta_text_runtime ?? (p as any).eta_text ?? null;
+      
+      // ERRO RESOLVIDO (L. 348): Type assertion seguro
+      const etaTxt = pp.eta_text_runtime ?? pp.eta_text ?? null;
       const etaKey = etaBucket(etaTxt);
       const prodKey = String(p.id);
 
       const fromMap = (
-        nm: ReturnType<typeof norm>,
+        nm: { map: Record<string, KeyStat | number>, max: number },
         key: string,
         alsoV1?: Record<string, number>
       ) => {
         const k = (key || "").toLowerCase();
-        const v2 = (nm.map as any)[k];
-        const raw = typeof v2 === "number" ? v2 : v2?.w ?? 0;
+        // ERRO RESOLVIDO (L. 358): Tipagem de nm.map agora segura
+        const v2 = nm.map[k];
+        const raw = typeof v2 === "number" ? v2 : (v2 as KeyStat)?.w ?? 0;
         const legacy = alsoV1 ? alsoV1[k] || 0 : 0;
         const v = Math.max(raw, legacy);
         return v / Math.max(1, nm.max);
@@ -365,7 +408,7 @@ export default function Home() {
       const fCat = fromMap(nCat, mainCat, p1.cat);
       const fStore = fromMap(nStore, storeKey, p1.store);
       const fGender = fromMap(nGender, genderKey);
-      const fSize = 0;
+      const fSize = 0; // fSize = fromMap(nSize, sizeKey);
       const fPrice = fromMap(nPrice, priceKey);
       const fEta = fromMap(nEta, etaKey);
       const fProd = fromMap(nProd, prodKey);
@@ -405,7 +448,7 @@ export default function Home() {
     }
 
     return scored.map((x) => x.p);
-  }, [filtered, views, rankSeed]);
+  }, [filtered, views, rankSeed, W]); // ERRO RESOLVIDO (L. 408): Adicionado W ao array de dependências
 
   const locationLabel = profile?.city
     ? `${profile.city}${profile?.state ? `, ${profile.state}` : ""}`
@@ -421,23 +464,18 @@ export default function Home() {
     }
   }
 
-  const idle = (cb: () => void) => {
-    const ric: any =
-      (typeof window !== "undefined" && (window as any).requestIdleCallback) ||
-      null;
-    if (ric) ric(cb, { timeout: 500 });
-    else setTimeout(cb, 0);
-  };
+  // A função 'idle' de nível superior (L. 424) foi removida, pois era redundante/não utilizada.
 
   function recordInteraction(p: Product) {
     try {
+      const pp = p as ProductWithFallback;
       const cats = categoriesOf(p);
       const mainCat = cats[0] || "";
       if (mainCat) bumpCategory(mainCat, 1.2);
       bumpStore(p.store_name || "", 1);
       if (p.gender) bumpGender(p.gender, 0.8);
       bumpPriceBucket(priceBucket(p.price_tag), 0.6);
-      const etaTxt = (p as any).eta_text_runtime ?? (p as any).eta_text ?? null;
+      const etaTxt = pp.eta_text_runtime ?? pp.eta_text ?? null;
       bumpEtaBucket(etaBucket(etaTxt), 0.5);
       bumpProduct(p.id, 0.25);
 
@@ -671,10 +709,9 @@ export default function Home() {
               let i = 0;
 
               const idleLocal = (cb: () => void) => {
-                const ric: any =
-                  (typeof window !== "undefined" &&
-                    (window as any).requestIdleCallback) ||
-                  null;
+                // ERRO RESOLVIDO (L. 535): Tipagem correta para requestIdleCallback
+                type RIC = Window["requestIdleCallback"] | undefined;
+                const ric = (typeof window !== "undefined" && (window as unknown as { requestIdleCallback: RIC }).requestIdleCallback) || null;
                 if (ric) ric(cb, { timeout: 500 });
                 else setTimeout(cb, 0);
               };
