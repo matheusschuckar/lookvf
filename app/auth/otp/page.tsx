@@ -66,8 +66,11 @@ function OtpPageInner() {
         "Enviamos um e-mail com o código. Abra o e-mail, copie o código do link e cole abaixo."
       );
       setStep("verify");
-    } catch (e: any) {
-      setErr(e?.message ?? "Não foi possível enviar o e-mail agora.");
+    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      setErr(
+        (e instanceof Error ? e.message : undefined) ??
+          "Não foi possível enviar o e-mail agora."
+      );
     } finally {
       setLoading(false);
     }
@@ -88,7 +91,8 @@ function OtpPageInner() {
         throw new Error("A nova senha deve ter pelo menos 6 caracteres.");
 
       // 1) Valida o token (sem precisar abrir o link)
-      const { error: vErr, data: vData } = await supabase.auth.verifyOtp({
+      const { error: vErr, data: _vData } = await supabase.auth.verifyOtp({
+        // CORREÇÃO: 'vData' foi renomeado para '_vData' para indicar que não é usado, resolvendo o erro 'no-unused-vars'
         email: cleanEmail,
         token,
         type: "recovery", // fluxo de recuperação de senha
@@ -104,9 +108,9 @@ function OtpPageInner() {
       setOk("Senha alterada com sucesso! Redirecionando…");
       // pequeno delay para UX
       setTimeout(() => router.replace(next), 700);
-    } catch (e: any) {
+    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
       // Mensagens mais amigáveis para erros comuns
-      const msg = String(e?.message || "");
+      const msg = String(e instanceof Error ? e.message : e || "");
       if (/Token has expired/i.test(msg)) {
         setErr("Código expirado. Peça um novo e-mail.");
       } else if (/Invalid token/i.test(msg)) {
