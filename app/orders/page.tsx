@@ -151,8 +151,9 @@ export default function OrdersPage() {
         setEmail(user.email);
         const data = await listOrders(user.email);
         setOrders(data);
-      } catch (e: any) {
-        setErr(e?.message ?? "Erro ao carregar pedidos");
+      } catch (e: unknown) {
+        // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+        setErr((e instanceof Error ? e.message : undefined) ?? "Erro ao carregar pedidos");
       } finally {
         setLoading(false);
       }
