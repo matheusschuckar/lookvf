@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react"; // Adicionado para os ícones
 
 type Step = "request" | "verify";
 
@@ -66,11 +67,8 @@ function OtpPageInner() {
         "Enviamos um e-mail com o código. Abra o e-mail, copie o código do link e cole abaixo."
       );
       setStep("verify");
-    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
-      setErr(
-        (e instanceof Error ? e.message : undefined) ??
-          "Não foi possível enviar o e-mail agora."
-      );
+    } catch (e: any) {
+      setErr(e?.message ?? "Não foi possível enviar o e-mail agora.");
     } finally {
       setLoading(false);
     }
@@ -91,8 +89,7 @@ function OtpPageInner() {
         throw new Error("A nova senha deve ter pelo menos 6 caracteres.");
 
       // 1) Valida o token (sem precisar abrir o link)
-      const { error: vErr, data: _vData } = await supabase.auth.verifyOtp({
-        // CORREÇÃO: 'vData' foi renomeado para '_vData' para indicar que não é usado, resolvendo o erro 'no-unused-vars'
+      const { error: vErr, data: vData } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
         type: "recovery", // fluxo de recuperação de senha
@@ -108,9 +105,9 @@ function OtpPageInner() {
       setOk("Senha alterada com sucesso! Redirecionando…");
       // pequeno delay para UX
       setTimeout(() => router.replace(next), 700);
-    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+    } catch (e: any) {
       // Mensagens mais amigáveis para erros comuns
-      const msg = String(e instanceof Error ? e.message : e || "");
+      const msg = String(e?.message || "");
       if (/Token has expired/i.test(msg)) {
         setErr("Código expirado. Peça um novo e-mail.");
       } else if (/Invalid token/i.test(msg)) {
@@ -213,9 +210,9 @@ function OtpPageInner() {
                   autoComplete="email"
                 />
                 <p className="mt-1 text-[12px] text-neutral-500">
-                  Você receberá um e-mail com um <b>código</b>. Se preferir,
-                  pode simplesmente colar o <i>link inteiro</i> aqui depois — eu
-                  extraio o código automaticamente.
+                  Você receberá um e-mail com um <b>código</b>. Se preferir, pode
+                  simplesmente colar o <i>link inteiro</i> aqui depois — eu extraio o
+                  código automaticamente.
                 </p>
               </div>
 
@@ -235,7 +232,7 @@ function OtpPageInner() {
                 disabled={loading}
                 className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60"
               >
-                {loading ? "Sending…" : "Send recovery email"}
+                {loading ? "Sending…" : "Send code to email"}
               </button>
             </form>
           ) : (
@@ -257,69 +254,51 @@ function OtpPageInner() {
                 />
               </div>
 
-              {/* Código (token) */}
+              {/* Code */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-neutral-800">
                   Code
                 </label>
                 <input
+                  type="text"
+                  inputMode="text"
                   required
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="Cole aqui o código (ou o link inteiro)"
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
+                  placeholder="Paste the 6-digit code here"
+                  autoComplete="off"
                 />
                 <p className="mt-1 text-[12px] text-neutral-500">
-                  Dica: se colar o <i>link inteiro</i> do e-mail, eu pego o
-                  código automaticamente.
+                  O código está no link de recuperação de senha que você recebeu.
                 </p>
               </div>
 
-              {/* Nova senha */}
+              {/* New Password */}
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <label className="block text-sm font-medium text-neutral-800">
-                    New password
-                  </label>
-                </div>
+                <label className="mb-1 block text-sm font-medium text-neutral-800">
+                  New Password
+                </label>
                 <div className="relative">
                   <input
                     type={showPw ? "text" : "password"}
                     required
-                    minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 pr-10 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
-                    placeholder="••••••••"
+                    placeholder="Min. 6 characters"
                     autoComplete="new-password"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPw((v) => !v)}
-                    className="absolute inset-y-0 right-0 mr-2 grid w-8 place-items-center rounded-lg text-neutral-500 hover:text-neutral-800"
-                    aria-label={showPw ? "Hide password" : "Show password"}
+                    onClick={() => setShowPw(!showPw)}
+                    className="absolute inset-y-0 right-0 grid h-full w-10 place-items-center text-neutral-500"
+                    title={showPw ? "Hide password" : "Show password"}
                   >
                     {showPw ? (
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                      >
-                        <path d="M2 2l20 20M9.88 9.88A3 3 0 0114.12 14.12M10.73 5.08A9.78 9.78 0 0112 5c5.52 0 10 5 10 7-0.34 0.62-1.14 1.67-2.45 2.8M6.1 6.1C3.86 7.66 2.34 9.72 2 12c0 2 4.48 7 10 7 1.17 0 2.3-.2 3.36-.57" />
-                      </svg>
+                      <EyeOff className="h-5 w-5" />
                     ) : (
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                      >
-                        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
+                      <Eye className="h-5 w-5" />
                     )}
                   </button>
                 </div>
@@ -364,7 +343,16 @@ function OtpPageInner() {
 
 export default function OtpPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen bg-neutral-50" />}>
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-neutral-50 p-5 pt-10">
+          <h1 className="text-4xl font-semibold tracking-tight text-black">
+            Recover
+          </h1>
+          <p className="mt-1 text-sm text-neutral-600">Loading…</p>
+        </main>
+      }
+    >
       <OtpPageInner />
     </Suspense>
   );
