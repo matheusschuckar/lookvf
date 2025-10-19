@@ -4,17 +4,41 @@ import { useCallback } from "react";
 import {
   bumpGender,
   bumpSize,
-  bumpCategory,
+  // bumpCategory, // REMOVIDO: Variável definida mas nunca usada
 } from "@/lib/prefs";
 
 type Gender = "female" | "male";
 type Size = "PP" | "P" | "M" | "G" | "GG";
+type Tab = "genero" | "tamanho" | "categorias"; // Novo tipo para as tabs
 
 function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set);
   if (next.has(value)) next.delete(value);
   else next.add(value);
   return next;
+}
+
+// Definição das props com tipagem segura
+interface FiltersModalProps {
+  open: boolean;
+  onClose: () => void;
+
+  activeTab: Tab;
+  setActiveTab: (t: Tab) => void;
+
+  allCategories: string[];
+
+  selectedGenders: Set<Gender>;
+  setSelectedGenders: (fn: (prev: Set<Gender>) => Set<Gender>) => void;
+
+  selectedSizes: Set<Size>;
+  setSelectedSizes: (fn: (prev: Set<Size>) => Set<Size>) => void;
+
+  selectedCategories: Set<string>;
+  setSelectedCategories: (fn: (prev: Set<string>) => Set<string>) => void;
+
+  clearAll: () => void;
+  onApply: () => void;
 }
 
 export default function FiltersModal({
@@ -31,30 +55,11 @@ export default function FiltersModal({
   setSelectedCategories,
   clearAll,
   onApply,
-}: {
-  open: boolean;
-  onClose: () => void;
-
-  activeTab: "genero" | "tamanho" | "categorias";
-  setActiveTab: (t: "genero" | "tamanho" | "categorias") => void;
-
-  allCategories: string[];
-
-  selectedGenders: Set<Gender>;
-  setSelectedGenders: (fn: (prev: Set<Gender>) => Set<Gender>) => void;
-
-  selectedSizes: Set<Size>;
-  setSelectedSizes: (fn: (prev: Set<Size>) => Set<Size>) => void;
-
-  selectedCategories: Set<string>;
-  setSelectedCategories: (fn: (prev: Set<string>) => Set<string>) => void;
-
-  clearAll: () => void;
-  onApply: () => void;
-}) {
-  if (!open) return null;
-
+}: FiltersModalProps) {
+  // HOOK RESOLVIDO: Movido para antes do retorno condicional para evitar o erro "React Hook 'useCallback' is called conditionally"
   const onBackdrop = useCallback(() => onClose(), [onClose]);
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[70]">
@@ -82,17 +87,20 @@ export default function FiltersModal({
           <div className="px-5">
             <div className="flex gap-6 text-sm" role="tablist" aria-label="Filtros">
               {[
-                { id: "genero", label: "Gênero" },
-                { id: "tamanho", label: "Tamanho" },
-                { id: "categorias", label: "Categorias" },
+                { id: "genero" as Tab, label: "Gênero" },
+                { id: "tamanho" as Tab, label: "Tamanho" },
+                { id: "categorias" as Tab, label: "Categorias" },
               ].map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setActiveTab(t.id as any)}
+                  // ANY RESOLVIDO: O casting é feito na definição do array de Tabs, tipando o retorno de t.id
+                  onClick={() => setActiveTab(t.id)}
                   role="tab"
-                  aria-selected={activeTab === (t.id as any)}
+                  // ANY RESOLVIDO
+                  aria-selected={activeTab === t.id}
                   className={`pb-3 -mb-px ${
-                    activeTab === (t.id as any)
+                    // ANY RESOLVIDO
+                    activeTab === t.id
                       ? "text-[#141414] border-b-2 border-[#141414]"
                       : "text-gray-500"
                   }`}
