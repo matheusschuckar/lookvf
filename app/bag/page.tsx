@@ -1,3 +1,4 @@
+// app/bag/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState, Suspense } from "react";
@@ -11,18 +12,19 @@ import {
   bagTotals,
   BagItem,
   clearBag,
-}
-// Importações de lib/bag/index.ts (certifique-se de que BagItem está exportado)
-from "@/lib/bag";
+} from "@/lib/bag";
 import { createOrder } from "@/lib/airtableClient";
 import BottomNav from "@/components/BottomNav";
-// Importar o ícone de lixeira para substituição segura (assumindo que você o tem)
-// import { Trash2 } from 'lucide-react'; 
+import { Trash2, Loader2, Minus, Plus, Copy } from "lucide-react"; // Adicionado ícones
 
+// Constantes
 const DELIVERY_FEE = 20; // frete por loja
 const OPERATION_FEE = 3.4; // taxa fixa por pedido
 
-// TIPAGEM: Definindo a estrutura de dados esperada do banco de dados (antes de mapear)
+// =====================================================
+// TIPAGEM
+// =====================================================
+
 type ProfileRow = {
   id: string;
   name: string | null;
@@ -52,9 +54,11 @@ type Profile = {
   cpf: string | null;
 };
 
-// ... Funções helpers para PIX ...
-// Funções 'crc16', 'tlv', 'buildPix', 'onlyDigits', 'cepValid', 'fetchAddress', 'normalize', 'isServiceable', 'serviceabilityMsg'
-// Nenhuma alteração nas funções helpers, pois elas já parecem tipadas internamente.
+type Step = "review" | "confirm" | "pix";
+
+// =====================================================
+// HELPERS PIX (EMV "copia e cola")
+// =====================================================
 
 // CRC16-CCITT (0xFFFF)
 function crc16(str: string): string {
@@ -120,8 +124,9 @@ function buildPix({
 }
 
 // =====================================================
+// HELPERS DE VALIDAÇÃO E ENDEREÇO
+// =====================================================
 
-// ===== helpers de validação =====
 function onlyDigits(v: string): string {
   return (v || "").replace(/\D/g, "");
 }
@@ -129,7 +134,6 @@ function cepValid(cep: string): boolean {
   return onlyDigits(cep).length === 8;
 }
 
-// Busca endereço no ViaCEP (CEP sem máscara)
 async function fetchAddress(cep: string): Promise<{
   street: string;
   neighborhood: string;
@@ -158,8 +162,7 @@ async function fetchAddress(cep: string): Promise<{
   }
 }
 
-// ===== serviceability (cidades atendidas) =====
-// Hoje: apenas cidade de São Paulo (SP). Ajuste aqui quando expandir.
+// CIDADES ATENDIDAS: Apenas cidade de São Paulo (SP).
 const SERVICEABLE = [{ uf: "SP", city: "São Paulo" }];
 
 function normalize(s: string): string {
@@ -184,6 +187,22 @@ function serviceabilityMsg(uf: string, city: string): string {
   }. Por enquanto entregamos apenas na cidade de São Paulo (SP).`;
 }
 
+// Formatador BRL
+function formatBRL(v?: number) {
+  try {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(v ?? 0);
+  } catch {
+    return `R$ ${(v ?? 0).toFixed(2)}`;
+  }
+}
+
+// =====================================================
+// COMPONENTE PRINCIPAL
+// =====================================================
+
 function BagPageInner() {
   const [items, setItems] = useState<BagItem[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -194,7 +213,7 @@ function BagPageInner() {
   const search = useSearchParams();
 
   // controle de etapas
-  const [step, setStep] = useState<"review" | "confirm" | "pix">("review");
+  const [step, setStep] = useState<Step>("review");
 
   // estado de edição de endereço (inicialmente copia do perfil)
   const [street, setStreet] = useState("");
@@ -209,7 +228,8 @@ function BagPageInner() {
   const [pixCode, setPixCode] = useState<string | null>(null);
 
   // pode pagar? depende de endereço atendido e não estar processando
-  const canCheckout = isServiceable(stateUf, city, cep) && creatingFor === null;
+  const canCheckout =
+    isServiceable(stateUf, city, cep) && creatingFor === null;
 
   // carrega itens da sacola
   useEffect(() => {
@@ -224,19 +244,17 @@ function BagPageInner() {
         const user = u?.user;
         if (!user) return;
 
-        // TIPAGEM: Assumindo que 'user_profiles' retorna a estrutura ProfileRow
         const { data: p, error } = await supabase
           .from("user_profiles")
           .select(
             "id,name,whatsapp,street,number,complement,bairro,city,state,cep,cpf"
           )
           .eq("id", user.id)
-          .single<ProfileRow>(); // Tipagem aqui!
+          .single<ProfileRow>();
 
         if (error) throw error;
-        if (!p) return; // Se o perfil não for encontrado
+        if (!p) return;
 
-        // Mapeamento para o tipo Profile
         const prof: Profile = {
           id: user.id,
           email: user.email || null,
@@ -259,10 +277,9 @@ function BagPageInner() {
         setComplement(prof.complement ?? "");
         setNeighborhood(prof.bairro ?? "");
         setCity(prof.city ?? "");
-        setStateUf(prof.state ?? "SP"); // state está tipado como string | null
+        setStateUf(prof.state ?? "SP");
         setCep(prof.cep ?? "");
       } catch (e) {
-        // TIPAGEM: Tratamento de erro com 'unknown' ou 'Error'
         const errorMsg =
           e instanceof Error ? e.message : "Erro desconhecido ao carregar perfil";
         setErr(errorMsg);
@@ -300,27 +317,12 @@ function BagPageInner() {
     })();
   }, [search, items.length, router]);
 
-  // REMOÇÃO DO ERRO 1: 'handleQty' is defined but never used
-  // A função é usada diretamente no JSX agora, tornando esta desnecessária.
-  // function handleQty(i: number, q: number) {
-  //   setItems(updateQty(i, Math.max(1, q)));
-  // }
-  
-  // REMOÇÃO DO ERRO 2: 'handleRemove' is defined but never used
-  // A função é usada diretamente no JSX agora, tornando esta desnecessária.
-  // function handleRemove(i: number) {
-  //   setItems(removeFromBag(i));
-  // }
-  
-  // A desestruturação do retorno de bagTotals() garante que 'subtotal' está tipado
+  // Totais e Frete
   const { subtotal } = bagTotals(items);
-
-  // lojas distintas no carrinho
   const uniqueStores = useMemo(
     () => Array.from(new Set(items.map((it) => it.store_name))),
     [items]
   );
-
   const delivery = items.length > 0 ? DELIVERY_FEE * uniqueStores.length : 0;
   const opFee = items.length > 0 ? OPERATION_FEE : 0;
   const total = items.length > 0 ? subtotal + delivery + opFee : 0;
@@ -328,7 +330,6 @@ function BagPageInner() {
   // salva o endereço EDITADO no user_profiles (oficial)
   async function saveAddressToProfile() {
     if (!profile?.id) return;
-
     if (!cepValid(cep)) {
       throw new Error("CEP inválido. Use 8 dígitos.");
     }
@@ -340,7 +341,7 @@ function BagPageInner() {
     ) {
       throw new Error("Preencha rua, número, bairro e cidade.");
     }
-    
+
     // TIPAGEM: O payload deve corresponder à estrutura de ProfileRow
     const payload: Partial<ProfileRow> = {
       id: profile.id,
@@ -352,8 +353,7 @@ function BagPageInner() {
       state: (stateUf || "SP").toUpperCase(),
       cep: onlyDigits(cep),
     };
-    
-    // TIPAGEM: upcasting seguro para evitar "implicit any" no .upsert()
+
     const { error } = await supabase
       .from("user_profiles")
       .upsert(payload as ProfileRow, { onConflict: "id" });
@@ -387,6 +387,7 @@ function BagPageInner() {
     setStep("confirm");
   }
 
+  // Finaliza a compra (chamado pelo botão PIX ou Cartão)
   async function handleCheckout(method: "pix" | "card") {
     try {
       setCreatingFor(method);
@@ -398,17 +399,16 @@ function BagPageInner() {
         return;
       }
 
-      // <<< BLOQUEIO POR REGIÃO
+      // 1) BLOQUEIO POR REGIÃO
       if (!isServiceable(stateUf, city, cep)) {
         setErr(serviceabilityMsg(stateUf, city));
         setStep("confirm");
         return;
       }
 
-      // 1) Sessão/e-mail
+      // 2) Sessão/e-mail
       const { data: u } = await supabase.auth.getUser();
       const sessionUser = u?.user ?? null;
-
       if (!sessionUser) {
         router.replace(
           `/auth?next=${encodeURIComponent("/bag?checkout=1#pix")}`
@@ -416,560 +416,502 @@ function BagPageInner() {
         return;
       }
 
-      const email = sessionUser.email || profile?.email || null;
-      if (!email) {
-        router.replace(
-          `/profile?next=${encodeURIComponent("/bag?checkout=1#pix")}`
-        );
-        return;
-      }
-
-      // 2) Salva possíveis alterações de endereço
+      // 3) Garante que o endereço mais atualizado foi salvo
       await saveAddressToProfile();
 
-      // 3) Gera PIX único para o pedido inteiro
-      const key = (process.env.NEXT_PUBLIC_PIX_KEY || "").replace(/\D/g, "");
-      const merchant = (
-        process.env.NEXT_PUBLIC_PIX_MERCHANT || "LOOK PAGAMENTOS"
-      ).toUpperCase();
-      const cityPay = (
-        process.env.NEXT_PUBLIC_PIX_CITY || "SAO PAULO"
-      ).toUpperCase();
-      if (!key) {
-        setErr("Chave PIX não configurada.");
-        return;
+      // 4) Mapeia os itens para o formato do Airtable
+      const airtableItems = items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        price: it.price,
+        qty: it.qty,
+        store_name: it.store_name,
+        photo_url: it.photo_url,
+      }));
+
+      const airtablePayload = {
+        Status: method === "pix" ? "Aguardando Pagamento" : "Aguardando Cartão",
+        Total: total,
+        Subtotal: subtotal,
+        Frete: delivery,
+        Taxa: opFee,
+        Itens: JSON.stringify(airtableItems),
+        ItensCount: items.length,
+
+        // Dados do Usuário
+        UserEmail: sessionUser.email,
+        UserName: profile?.name,
+        UserWhatsapp: profile?.whatsapp,
+        UserCPF: profile?.cpf,
+
+        // Endereço de Entrega (do state/editável)
+        Rua: street.trim(),
+        Numero: number.trim(),
+        Complemento: complement.trim(),
+        Bairro: neighborhood.trim(),
+        Cidade: city.trim(),
+        UF: stateUf.toUpperCase(),
+        CEP: onlyDigits(cep),
+        // Notas (opcional)
+        Notes: `Via App Look - ${method.toUpperCase()}`,
+      };
+
+      // 5) Cria o pedido no Airtable
+      const order = await createOrder(airtablePayload);
+      const airtableId = order?.id;
+
+      if (!airtableId) {
+        throw new Error("Erro ao criar o pedido. Tente novamente.");
       }
 
-      const { subtotal: totalSubtotal } = bagTotals(items); // Renomeado para evitar conflito com 'subtotal' de escopo maior
-      const groups = items.reduce((acc: Record<string, BagItem[]>, it) => {
-        (acc[it.store_name] ||= []).push(it);
-        return acc;
-      }, {} as Record<string, BagItem[]>);
+      // 6) Lógica específica para PIX
+      if (method === "pix") {
+        const pixKey = process.env.NEXT_PUBLIC_PIX_KEY;
+        const pixMerchant = process.env.NEXT_PUBLIC_PIX_MERCHANT;
 
-      const numStores = Object.keys(groups).length;
-      const totalDelivery = DELIVERY_FEE * numStores;
-      const grandTotal = totalSubtotal + totalDelivery + OPERATION_FEE; // inclui taxa de operação
-
-      // Order ID (compartilhado entre as linhas) = txid
-      const orderId = `LOOK${Date.now()}`.slice(0, 25);
-      const payload = buildPix({
-        key,
-        merchant,
-        city: cityPay,
-        amount: grandTotal,
-        txid: orderId,
-      });
-      const createdAtIso = new Date().toISOString();
-
-      // 4) Cria UMA linha por LOJA
-      for (const storeName of Object.keys(groups)) {
-        const gItems = groups[storeName];
-        const gSubtotal = gItems.reduce(
-          (s, it) => s + it.unit_price * it.qty,
-          0
-        );
-        const gDelivery = DELIVERY_FEE;
-        const gTotal = gSubtotal + gDelivery;
-
-        const itemsSummary = gItems
-          .map(
-            (it) =>
-              `• ${it.name} (${it.size}) — ${it.store_name} — x${
-                it.qty
-              } — R$ ${(it.unit_price * it.qty).toFixed(2)}`
-          )
-          .join("\n");
-
-        // TIPAGEM: A função createOrder (importada de airtableClient) deve aceitar um objeto tipado,
-        // mas AirTable geralmente aceita chaves de string e valores de tipo primitivo ou string.
-        // O `as any` é removido e passamos o objeto tipado corretamente.
-        await createOrder({
-          // —— campos “gerais” do pedido
-          Status: "Aguardando Pagamento",
-          "Order ID": orderId,
-          "Created At": createdAtIso,
-
-          // —— comprador / endereço (usa os dados confirmados)
-          Name: profile?.name || "",
-          "User Email": email,
-          "User WhatsApp": profile?.whatsapp || "",
-          Street: street.trim() || profile?.street || "",
-          Number: number.trim() || profile?.number || "",
-          Complement: (complement || "").trim() || profile?.complement || "",
-          CEP: onlyDigits(cep) || profile?.cep || "",
-          City: city.trim() || profile?.city || "",
-
-          // —— valores da LOJA específica
-          "Item Price": Number(gSubtotal.toFixed(2)),
-          "Delivery Fee": Number(gDelivery.toFixed(2)),
-          Total: Number(gTotal.toFixed(2)),
-
-          // —— itens desta loja
-          "Product ID": gItems.map((it) => String(it.product_id)).join(", "),
-          "Product Name": gItems.map((it) => it.name).join(" | "),
-          "Store Name": storeName,
-          Size: gItems.map((it) => it.size).join(", "),
-
-          Notes: `Loja: ${storeName}\nItems:\n${itemsSummary}\n\nLojas distintas neste pedido: ${numStores}\nTaxa de operação (pedido): R$ ${OPERATION_FEE.toFixed(
-            2
-          )}\nMétodo: ${
-            method === "pix" ? "PIX" : "PIX (cartão)"
-          }\nOrderID: ${orderId}`,
-          "PIX Code": payload, // mesmo PIX para todas as linhas
-        });
-      }
-
-      setPixCode(payload);
-      setOkMsg("Pedido criado! Pague via PIX para prosseguir.");
-      setStep("pix");
-
-      // rola para o PIX
-      setTimeout(() => {
-        if (typeof window !== "undefined") {
-          const el = document.querySelector("#pix-section");
-          el?.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (!pixKey || !pixMerchant) {
+          throw new Error("Configurações PIX não encontradas.");
         }
-      }, 50);
-      // REMOÇÃO DO ERRO 3: 'finishAfterPaid' is defined but never used
-      // Essa função foi removida/comentada para evitar o erro de 'unused-vars',
-      // pois não havia um botão que a chamasse. Se for necessário, adicione o botão.
-      // finishAfterPaid(); // Não deve ser chamado aqui, mas após o pagamento.
-      
+
+        const pix = buildPix({
+          key: pixKey,
+          merchant: pixMerchant,
+          city: city.trim() || "SAO PAULO", // Fallback seguro
+          amount: total,
+          txid: airtableId.slice(-10), // Usar parte do ID do Airtable como TXID
+        });
+
+        setPixCode(pix);
+        setStep("pix");
+        setOkMsg("Pedido criado com sucesso! Use o PIX abaixo para pagar.");
+      } else {
+        // Lógica de redirecionamento para gateway de cartão (simulado)
+        setOkMsg(
+          "Pedido criado. Você será redirecionado para o pagamento com cartão."
+        );
+        // Simulação de redirecionamento, na realidade, seria para um link de gateway.
+        setTimeout(() => {
+          router.replace(`/orders/${airtableId}?status=card_pending`);
+          clearBag(); // Limpa a sacola após o checkout
+        }, 1000);
+      }
+
+      clearBag(); // Limpa a sacola após o checkout (mesmo para PIX)
     } catch (e) {
-      // TIPAGEM: Tratamento de erro com 'unknown' ou 'Error'
       const errorMsg =
-        e instanceof Error ? e.message : "Erro desconhecido ao criar pedido";
+        e instanceof Error
+          ? e.message
+          : "Erro desconhecido ao finalizar o pedido.";
       setErr(errorMsg);
-    } finally {
       setCreatingFor(null);
     }
   }
 
+  // Função para copiar o código PIX
   async function copyPix() {
     if (!pixCode) return;
     try {
       await navigator.clipboard.writeText(pixCode);
       setOkMsg("Código PIX copiado!");
     } catch {
-      setErr("Não foi possível copiar. Selecione e copie manualmente.");
+      setErr("Não foi possível copiar. Por favor, selecione e copie manualmente.");
     }
   }
-  
-  // REMOÇÃO DO ERRO 3: 'finishAfterPaid' is defined but never used
-  // A função é deixada aqui caso seja implementada no futuro. Se for removida, o erro some.
-  // Se for mantida, adicione: // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // Mas o ideal é usá-la. Se for para ser usada, adicione um botão:
-  /*
-  function finishAfterPaid() {
-    clearBag();
-    setItems([]);
-    setOkMsg("Pagamento confirmado manualmente. Obrigado!");
-  }
-  */
 
-  // UI (recalcula para a seção de PIX)
-  const { subtotal: st } = bagTotals(items);
-  const deliveryUi = items.length > 0 ? DELIVERY_FEE * uniqueStores.length : 0;
-  const opFeeUi = items.length > 0 ? OPERATION_FEE : 0;
-  const totalUi = items.length > 0 ? st + deliveryUi + opFeeUi : 0;
+  // =====================================================
+  // RENDERIZAÇÃO
+  // =====================================================
 
-  return (
-    <main className="p-4 max-w-md mx-auto">
-      <h1 className="text-2xl font-semibold mb-1">Bag</h1>
-      <p className="text-sm text-gray-700 mb-4">Revise seus itens</p>
-
-      {/* Etapa 1: revisão */}
-      {step === "review" && items.length === 0 && !pixCode ? (
-        <div className="rounded-xl border p-4 bg-white">
-          <p className="text-sm">Sua sacola está vazia.</p>
+  if (items.length === 0 && step !== "pix") {
+    return (
+      <main className="min-h-screen bg-neutral-50 p-5 pt-10">
+        <h1 className="text-3xl font-semibold tracking-tight text-black">
+          Your Bag
+        </h1>
+        <div className="mt-8 rounded-xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <p className="text-gray-600">Sua sacola está vazia.</p>
           <Link
             href="/"
-            className="inline-block mt-3 rounded-lg border px-3 py-2 text-sm"
+            className="mt-4 block w-full rounded-xl bg-black px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition active:scale-[0.99]"
           >
-            Voltar para explorar
+            Start Shopping
           </Link>
         </div>
-      ) : step === "review" ? (
-        <>
-          {!pixCode && (
-            <>
-              <div className="space-y-3">
-                {items.map((it, i) => (
-                  <div
-                    key={i}
-                    className="rounded-xl border p-2 bg-white flex gap-3"
-                  >
-                    {/* AVISO: Usando <img> (aviso do Next.js) */}
-                    <img
-                      src={it.photo_url}
-                      alt={it.name}
-                      className="w-20 h-20 object-cover rounded-lg"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-black leading-tight">
-                        {it.name}
-                      </p>
-                      <p className="text-xs text-gray-600">{it.store_name}</p>
-                      <p className="text-xs text-gray-600">Size: {it.size}</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="text-xs text-gray-600">Qtd</span>
-                        <div className="inline-flex items-center rounded-full border border-gray-200 overflow-hidden">
-                          <button
-                            type="button"
-                            // AQUI: Usando setItems diretamente (resolve handleQty unused)
-                            onClick={() =>
-                              setItems((prevItems) =>
-                                updateQty(i, Math.max(1, prevItems[i].qty - 1))
-                              )
-                            }
-                            className="h-8 w-8 text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition"
-                            aria-label="Diminuir quantidade"
-                          >
-                            –
-                          </button>
-                          <div className="w-8 text-center text-sm font-medium tabular-nums select-none">
-                            {it.qty}
-                          </div>
-                          <button
-                            type="button"
-                            // AQUI: Usando setItems diretamente (resolve handleQty unused)
-                            onClick={() =>
-                              setItems((prevItems) =>
-                                updateQty(i, prevItems[i].qty + 1)
-                              )
-                            }
-                            className="h-8 w-8 text-gray-700 hover:bg-gray-50 active:scale-[0.98] transition"
-                            aria-label="Aumentar quantidade"
-                          >
-                            +
-                          </button>
-                        </div>
-                        <button
-                          // AQUI: Usando setItems diretamente (resolve handleRemove unused)
-                          onClick={() => setItems(removeFromBag(i))}
-                          className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[12px] text-gray-800 hover:bg-gray-50 hover:border-gray-300 active:scale-[0.98] shadow-sm transition"
-                          aria-label={`Remover ${it.name} da sacola`}
-                          title="Remover"
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            className="text-gray-700"
-                          >
-                            <path
-                              d="M3 6h18"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d="M8 6V4h8v2"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d="M19 6l-1 14H6L5 6"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d="M10 11v6M14 11v6"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                          Remover
-                        </button>
+        <BottomNav />
+      </main>
+    );
+  }
+
+  return (
+    <main className="canvas max-w-md mx-auto min-h-screen pb-24">
+      {/* Header */}
+      <div className="pt-6 px-5 flex items-center justify-between">
+        <h1 className="text-3xl font-semibold tracking-tight text-black">
+          {step === "review" ? "Your Bag" : "Checkout"}
+        </h1>
+        {step === "confirm" && (
+          <button
+            onClick={() => setStep("review")}
+            className="text-sm text-neutral-600 underline"
+          >
+            Edit Bag
+          </button>
+        )}
+      </div>
+
+      {/* Passo 1: Revisão da Sacola (review) */}
+      {step === "review" && (
+        <div className="mt-6 px-5 space-y-6">
+          {/* Lista de Itens */}
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold">Items ({items.length})</h2>
+            <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-black/5 space-y-4">
+              {items.map((item, i) => (
+                <div key={i} className="flex items-center space-x-4 border-b pb-4 last:border-b-0 last:pb-0">
+                  {/* Imagem */}
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                    {item.photo_url ? (
+                      <img
+                        src={
+                          Array.isArray(item.photo_url)
+                            ? item.photo_url[0]
+                            : item.photo_url
+                        }
+                        alt={item.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-neutral-400">
+                        👜
                       </div>
-                    </div>
-                    <div className="text-sm font-semibold">
-                      R$ {(it.unit_price * it.qty).toFixed(2)}
+                    )}
+                  </div>
+
+                  {/* Detalhes */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium line-clamp-2">
+                      {item.name}
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      {item.store_name}
+                    </p>
+                    <p className="text-xs font-semibold text-neutral-800 mt-1">
+                      {formatBRL(item.price)}
+                    </p>
+                  </div>
+
+                  {/* Qtd e Remover */}
+                  <div className="flex flex-col items-end space-y-1">
+                    <button
+                      onClick={() => setItems(removeFromBag(item.id))}
+                      className="text-neutral-500 hover:text-red-500 transition-colors"
+                      title="Remover item"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <div className="flex items-center rounded-full border border-neutral-200 bg-neutral-50">
+                      <button
+                        onClick={() =>
+                          setItems(updateQty(item.id, Math.max(1, item.qty - 1)))
+                        }
+                        disabled={item.qty <= 1}
+                        className="p-1.5 text-neutral-600 disabled:opacity-30"
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <span className="w-5 text-center text-xs font-medium">
+                        {item.qty}
+                      </span>
+                      <button
+                        onClick={() => setItems(updateQty(item.id, item.qty + 1))}
+                        className="p-1.5 text-neutral-600"
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="rounded-xl border p-4 bg-white mt-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Subtotal</span>
-                  <span>R$ {subtotal.toFixed(2)}</span>
                 </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span>
-                    Delivery{" "}
-                    {uniqueStores.length > 0 && (
-                      <span className="text-gray-500">
-                        ({uniqueStores.length}{" "}
-                        {uniqueStores.length === 1 ? "loja" : "lojas"} × R${" "}
-                        {DELIVERY_FEE.toFixed(2)})
-                      </span>
-                    )}
-                  </span>
-                  <span>R$ {delivery.toFixed(2)}</span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span>Taxa de operação</span>
-                  <span>R$ {opFee.toFixed(2)}</span>
-                </div>
-
-                <div className="flex items-center justify-between text-sm font-semibold mt-1">
-                  <span>Total</span>
-                  <span>R$ {total.toFixed(2)}</span>
-                </div>
-
-                <div className="mt-4 flex flex-col space-y-3">
-                  <Link
-                    href="/"
-                    className="w-full rounded-lg border px-3 py-2 text-sm text-center"
-                  >
-                    Continuar comprando
-                  </Link>
-                  <button
-                    onClick={handleContinue}
-                    className="w-full rounded-lg bg-black text-white py-2 text-sm font-semibold"
-                  >
-                    Continuar para pagamento
-                  </button>
-                  {err && <p className="text-xs text-red-600">{err}</p>}
-                  {okMsg && <p className="text-xs text-green-700">{okMsg}</p>}
-                </div>
-              </div>
-            </>
-          )}
-        </>
-      ) : null}
-
-      {/* Etapa 2: confirmação/edição do endereço + botões */}
-      {step === "confirm" && !pixCode && items.length > 0 && (
-        <div className="rounded-xl border p-4 bg-white mt-4">
-          <h2 className="text-lg font-semibold mb-2">Confirme seu endereço</h2>
-
-          {/* Aviso de área não atendida */}
-          {!isServiceable(stateUf, city, cep) && (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
-              {serviceabilityMsg(stateUf, city)}
-              <div className="mt-2 text-[12px] text-amber-800">
-                Atualize seu CEP e cidade para prosseguir.
+              ))}
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => {
+                    clearBag();
+                    setItems([]);
+                  }}
+                  className="text-xs text-red-600 underline"
+                >
+                  Clear Bag
+                </button>
               </div>
             </div>
-          )}
+          </section>
 
-          {/* CEP */}
-          <div className="mb-3">
-            <label className="mb-1 block text-xs text-gray-700">CEP</label>
-            <input
-              value={cep}
-              onChange={(e) => setCep(e.target.value)}
-              inputMode="numeric"
-              placeholder="01311000"
-              className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 ${
-                cep.length > 0 && !cepValid(cep)
-                  ? "border-red-300 focus:ring-red-200 bg-red-50"
-                  : "border-gray-200 focus:ring-black/10 bg-white"
-              }`}
-            />
-          </div>
-
-          {/* Rua / Número */}
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs text-gray-700">Rua</label>
-              <input
-                value={street}
-                onChange={(e) => setStreet(e.target.value)}
-                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
-                placeholder="Rua Haddock Lobo"
-              />
+          {/* Resumo de Custos */}
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold">Summary</h2>
+            <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-black/5 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-neutral-600">Subtotal</span>
+                <span className="font-medium">{formatBRL(subtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-600">Delivery ({uniqueStores.length} stores)</span>
+                <span className="font-medium">{formatBRL(delivery)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-600">Service Fee</span>
+                <span className="font-medium">{formatBRL(opFee)}</span>
+              </div>
+              <div className="pt-3 flex justify-between border-t border-neutral-100 mt-3 font-semibold text-lg">
+                <span>Total</span>
+                <span>{formatBRL(total)}</span>
+              </div>
             </div>
-            <div>
-              <label className="mb-1 block text-xs text-gray-700">Número</label>
-              <input
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
-                placeholder="123"
-              />
-            </div>
-          </div>
+          </section>
 
-          {/* Complemento */}
-          <div className="mb-3">
-            <label className="mb-1 block text-xs text-gray-700">
-              Complemento
-            </label>
-            <input
-              value={complement}
-              onChange={(e) => setComplement(e.target.value)}
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
-              placeholder="Apto 101 / Bloco B"
-            />
-          </div>
-
-          {/* Bairro */}
-          <div className="mb-3">
-            <label className="mb-1 block text-xs text-gray-700">Bairro</label>
-            <input
-              value={neighborhood}
-              onChange={(e) => setNeighborhood(e.target.value)}
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
-              placeholder="Bela Vista"
-            />
-          </div>
-
-          {/* Estado + Cidade */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="relative">
-              <label className="mb-1 block text-xs text-gray-700">
-                Estado (UF)
-              </label>
-              <select
-                value={stateUf}
-                onChange={(e) => setStateUf(e.target.value)}
-                className="w-full rounded-md border border-gray-200 bg-white appearance-none px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10 pr-8"
-              >
-                {[
-                  "AC",
-                  "AL",
-                  "AP",
-                  "AM",
-                  "BA",
-                  "CE",
-                  "DF",
-                  "ES",
-                  "GO",
-                  "MA",
-                  "MT",
-                  "MS",
-                  "MG",
-                  "PA",
-                  "PB",
-                  "PR",
-                  "PE",
-                  "PI",
-                  "RJ",
-                  "RN",
-                  "RS",
-                  "RO",
-                  "RR",
-                  "SC",
-                  "SP",
-                  "SE",
-                  "TO",
-                ].map((uf) => (
-                  <option key={uf} value={uf}>
-                    {uf}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-3 top-8 text-neutral-400">
-                ▼
-              </span>
-            </div>
-            <div className="relative">
-              <label className="mb-1 block text-xs text-gray-700">Cidade</label>
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
-                placeholder="São Paulo"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col space-y-3">
-            <button
-              onClick={() => handleCheckout("pix")}
-              disabled={!canCheckout}
-              className="w-full rounded-lg bg-black text-white py-2 text-sm font-semibold disabled:opacity-60"
-            >
-              {creatingFor === "pix" ? "Gerando PIX…" : "Pagar com Pix"}
-            </button>
-            <button
-              onClick={() => handleCheckout("card")}
-              disabled={!canCheckout}
-              className="w-full rounded-lg bg-black text-white py-2 text-sm font-semibold disabled:opacity-60"
-            >
-              {creatingFor === "card"
-                ? "Gerando PIX…"
-                : "Cartão de crédito (via Pix)"}
-            </button>
-            <button
-              onClick={() => setStep("review")}
-              className="w-full rounded-lg border px-3 py-2 text-sm text-center"
-            >
-              Voltar
-            </button>
-          </div>
-
-          {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
-          {okMsg && <p className="mt-3 text-xs text-green-700">{okMsg}</p>}
+          {/* Botão de Checkout */}
+          <button
+            onClick={handleContinue}
+            className="w-full rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60 mt-4"
+            disabled={items.length === 0}
+          >
+            Continue to Checkout
+          </button>
         </div>
       )}
 
-      {/* Etapa 3: PIX */}
-      {(step === "pix" || pixCode) && (
-        <div id="pix-section" className="rounded-xl border p-4 bg-white mt-4">
-          <h2 className="text-lg font-semibold mb-1">Pagamento PIX</h2>
-          <p className="text-xs text-gray-700 mb-3">
-            Escaneie o QR ou toque em “Copiar código” para pagar. Valor:{" "}
-            <b>R$ {totalUi.toFixed(2)}</b>
-          </p>
+      {/* Passo 2: Confirmação e Endereço (confirm) */}
+      {step === "confirm" && (
+        <div className="mt-6 px-5 space-y-6">
+          <h2 className="text-xl font-semibold">Delivery Address</h2>
 
-          {pixCode ? (
-            <>
-              <div className="flex justify-center">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                    pixCode
-                  )}`}
-                  alt="QR Code PIX"
-                  className="rounded-lg"
+          <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-black/5 space-y-4">
+            {/* Endereço Form */}
+            <div className="space-y-3">
+              {/* CEP */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-800">
+                  CEP
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={cep}
+                  onChange={(e) => setCep(e.target.value)}
+                  maxLength={9}
+                  placeholder="00000-000"
+                  className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
                 />
               </div>
 
-              <div className="mt-3">
-                <label className="text-xs text-gray-600">
-                  Copia e cola PIX
+              {/* Rua */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-neutral-800">
+                  Street
                 </label>
-                <textarea
-                  className="w-full rounded-md border p-2 text-xs"
-                  rows={4}
-                  readOnly
-                  value={pixCode}
+                <input
+                  type="text"
+                  required
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  placeholder="Rua, Avenida, etc."
+                  className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
                 />
-                <div className="mt-2 flex flex-col space-y-2">
-                  <button
-                    onClick={copyPix}
-                    className="rounded-lg bg-black text-white px-3 py-2 text-sm font-semibold"
-                  >
-                    Copiar código
-                  </button>
-                  <Link
-                    href="/orders"
-                    className="rounded-lg border px-3 py-2 text-sm text-center"
-                  >
-                    Acesse seus pedidos
-                  </Link>
+              </div>
+
+              {/* Número e Complemento */}
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-800">
+                    Number
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    placeholder="100"
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1 block text-sm font-medium text-neutral-800">
+                    Complement (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={complement}
+                    onChange={(e) => setComplement(e.target.value)}
+                    placeholder="Apto 101"
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
+                  />
                 </div>
               </div>
-            </>
-          ) : (
-            <p className="text-sm text-gray-600">Gerando PIX…</p>
-          )}
 
-          <p className="text-[11px] text-gray-500 mt-3">
-            Recebedor:{" "}
-            {(
-              process.env.NEXT_PUBLIC_PIX_MERCHANT || "LOOK PAGAMENTOS"
-            ).toUpperCase()}{" "}
-            — Chave: {process.env.NEXT_PUBLIC_PIX_KEY || "(não definida)"}
-          </p>
-          {okMsg && <p className="text-xs text-green-700 mt-2">{okMsg}</p>}
-          {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+              {/* Bairro, Cidade, UF */}
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-neutral-800">
+                    Neighborhood
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={neighborhood}
+                    onChange={(e) => setNeighborhood(e.target.value)}
+                    placeholder="Bairro"
+                    className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
+                  />
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-medium text-neutral-800">
+                      City
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="Cidade"
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10"
+                    />
+                  </div>
+                  <div className="w-20">
+                    <label className="mb-1 block text-sm font-medium text-neutral-800">
+                      UF
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={stateUf}
+                      onChange={(e) => setStateUf(e.target.value.toUpperCase())}
+                      maxLength={2}
+                      placeholder="SP"
+                      className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-3 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:ring-2 focus:ring-black/10 uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mensagem de Serviceability */}
+            {!isServiceable(stateUf, city, cep) && (
+              <p className="mt-2 text-sm text-red-600">
+                {serviceabilityMsg(stateUf, city)}
+              </p>
+            )}
+
+            {err && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                {err}
+              </p>
+            )}
+
+            {/* Opções de Pagamento */}
+            <div className="space-y-2 pt-4 border-t">
+              <h3 className="text-lg font-semibold">Payment Method</h3>
+              <p className="text-sm text-neutral-600">Total: <span className="font-bold text-black">{formatBRL(total)}</span></p>
+
+              <button
+                onClick={() => handleCheckout("pix")}
+                disabled={!canCheckout || creatingFor !== null}
+                className="w-full rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-60 flex items-center justify-center space-x-2"
+              >
+                {creatingFor === "pix" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Processing PIX…</span>
+                  </>
+                ) : (
+                  <span>Pay with PIX</span>
+                )}
+              </button>
+
+              <button
+                onClick={() => handleCheckout("card")}
+                disabled={!canCheckout || creatingFor !== null}
+                className="w-full rounded-xl border border-black bg-white px-4 py-3 text-sm font-semibold text-black shadow-sm transition active:scale-[0.99] disabled:opacity-60 flex items-center justify-center space-x-2"
+              >
+                {creatingFor === "card" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Processing Card…</span>
+                  </>
+                ) : (
+                  <span>Pay with Card</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passo 3: PIX Gerado (pix) */}
+      {step === "pix" && (
+        <div className="mt-6 px-5">
+          <h2 className="text-xl font-semibold">Payment with PIX</h2>
+          <div className="mt-4 rounded-xl bg-white p-6 shadow-sm ring-1 ring-black/5 space-y-4 text-center">
+            <h3 className="text-lg font-bold text-black">
+              Total: {formatBRL(total)}
+            </h3>
+
+            {pixCode ? (
+              <>
+                <p className="text-xs text-gray-700 mb-3">
+                  Use o QR abaixo ou copie o código para pagar.
+                </p>
+                <div className="flex justify-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                      pixCode
+                    )}`}
+                    alt="QR Code PIX"
+                    className="rounded-lg"
+                  />
+                </div>
+                <div className="mt-3 text-left">
+                  <label className="text-xs text-gray-600">
+                    Copia e cola PIX
+                  </label>
+                  <textarea
+                    className="w-full rounded-md border p-2 text-xs"
+                    rows={4}
+                    readOnly
+                    value={pixCode}
+                  />
+                  <div className="mt-2 flex flex-col space-y-2">
+                    <button
+                      onClick={copyPix}
+                      className="rounded-lg bg-black text-white px-3 py-2 text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span>Copiar código</span>
+                    </button>
+                    <Link
+                      href="/orders"
+                      className="rounded-lg border px-3 py-2 text-sm text-center text-neutral-700"
+                    >
+                      Acesse seus pedidos
+                    </Link>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-600">Gerando PIX…</p>
+            )}
+
+            <p className="text-[11px] text-gray-500 mt-3 border-t pt-3">
+              Recebedor:{" "}
+              {(
+                process.env.NEXT_PUBLIC_PIX_MERCHANT || "LOOK PAGAMENTOS"
+              ).toUpperCase()}{" "}
+              — Chave: {process.env.NEXT_PUBLIC_PIX_KEY || "(não definida)"}
+            </p>
+            {okMsg && <p className="text-xs text-green-700 mt-2">{okMsg}</p>}
+            {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+          </div>
         </div>
       )}
 
@@ -981,7 +923,14 @@ function BagPageInner() {
 export default function BagPage() {
   return (
     <Suspense
-      fallback={<main className="p-4 max-w-md mx-auto">Carregando…</main>}
+      fallback={
+        <main className="min-h-screen bg-neutral-50 p-5 pt-10">
+          <h1 className="text-3xl font-semibold tracking-tight text-black">
+            Your Bag
+          </h1>
+          <p className="mt-1 text-sm text-neutral-600">Loading…</p>
+        </main>
+      }
     >
       <BagPageInner />
     </Suspense>
