@@ -29,7 +29,7 @@ function cepValid(cep: string) {
   return onlyDigits(cep).length === 8;
 }
 function cpfValid(cpf: string) {
-  const s = onlyDigits(cpf);
+  const s = onlyDigits(cpf); // CORREÇÃO: Variável 's' agora é 'const'
   if (s.length !== 11) return false;
   if (/^(\d)\1+$/.test(s)) return false;
   let sum = 0;
@@ -160,8 +160,8 @@ function ProfilePageInner() {
           setCep(p.cep ?? "");
           setCpf(p.cpf ?? "");
         }
-      } catch (e: any) {
-        setErr(e?.message ?? "Não foi possível carregar seu perfil");
+      } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+        setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível carregar seu perfil");
       } finally {
         setLoading(false);
       }
@@ -248,8 +248,8 @@ function ProfilePageInner() {
 
       setOk("Perfil salvo com sucesso.");
       setTimeout(() => router.replace(next), 350);
-    } catch (e: any) {
-      setErr(e?.message ?? "Não foi possível salvar seu perfil");
+    } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível salvar seu perfil");
     } finally {
       setSaving(false);
     }
