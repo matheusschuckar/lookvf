@@ -57,8 +57,9 @@ export default function OrderDetailPage() {
       const data = (await res.json()) as AirtableRecord;
       setOrder(data);
       setErr(null);
-    } catch (e: any) {
-      setErr(e.message ?? "Erro ao carregar pedido");
+    } catch (e: unknown) {
+      // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      setErr((e instanceof Error ? e.message : undefined) ?? "Erro ao carregar pedido");
     }
   }
 
