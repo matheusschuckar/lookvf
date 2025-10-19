@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image"; // CORREÇÃO: Importar Image para otimização
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -88,7 +89,7 @@ export default function SavedPage() {
         // 3) contagens
         const counts = await countPerProducts(ids);
         setLikeCounts(counts);
-      } catch (e: unknown) { // CORREÇÃO: tipagem segura para o catch block (no-explicit-any)
+      } catch (e: unknown) { 
         setErr((e instanceof Error ? e.message : undefined) ?? "Não foi possível carregar seus salvos");
       } finally {
         setLoading(false);
@@ -138,7 +139,7 @@ export default function SavedPage() {
         .eq("product_id", pid)
         .eq("user_id", userId);
       if (error) throw error;
-    } catch (e: unknown) { // CORREÇÃO: tipagem explícita para o catch block
+    } catch { // CORREÇÃO: Linha 141 - Remoção de 'e' não utilizada
       // rollback
       setProducts(prevProds);
       setLikeRows(prevRows);
@@ -229,20 +230,24 @@ export default function SavedPage() {
               >
                 <div className="relative">
                   <Link href={`/product/${pid}`} className="block">
-                    <img
-                      src={p.photo_url}
-                      alt={p.name}
-                      className="w-full h-44 object-cover"
-                    />
+                    <div className="relative w-full h-44"> {/* CORREÇÃO: Adicionar div para Image */}
+                      <Image
+                        src={p.photo_url}
+                        alt={p.name}
+                        fill
+                        sizes="(max-width: 768px) 50vw, 33vw" // Exemplo
+                        className="object-cover"
+                      />
+                    </div>
                   </Link>
 
                   {/* badge preço */}
-                  <span className="absolute right-2 top-2 rounded-full bg-white/90 backdrop-blur px-2 py-0.5 text-[11px] font-medium shadow border border-gray-200">
+                  <span className="absolute right-2 top-2 z-10 rounded-full bg-white/90 backdrop-blur px-2 py-0.5 text-[11px] font-medium shadow border border-gray-200">
                     {price}
                   </span>
 
                   {/* like + count */}
-                  <div className="absolute left-2 top-2 flex items-center gap-1.5">
+                  <div className="absolute left-2 top-2 flex items-center gap-1.5 z-10">
                     <button
                       onClick={() => handleUnlike(pid)}
                       disabled={busy}
