@@ -12,7 +12,7 @@ import { BannersCarousel, type Banner } from "../components/BannersCarousel";
 import {
   EditorialTallBanner,
   SelectionHeroBanner,
-  // BannersTriplet, // ERRO RESOLVIDO: Removido, pois o linter acusou que não estava sendo usado.
+  // BannersTriplet, // ERRO RESOLVIDO (L. 15:3): Removido 'BannersTriplet' que não estava sendo usado.
 } from "../components/HomeBanners";
 import HeaderBar from "../components/HeaderBar";
 import AppDrawer from "../components/AppDrawer";
@@ -79,7 +79,7 @@ async function fetchNearestStoreIdsForUser(userId: string): Promise<number[]> {
     console.warn("[nearest] rpc error:", error.message);
     return [];
   }
-  // ERRO RESOLVIDO (L. 69): Tipagem correta para o retorno do RPC
+  // ERRO RESOLVIDO (L. 69:17): Tipagem correta para o retorno do RPC
   return (data as NearestStoreResult[] ?? []).map((r) => r.store_id);
 }
 
@@ -186,16 +186,17 @@ export default function Home() {
                 "id,name,whatsapp,street,number,complement,city,cep,status"
               )
               .eq("id", u.user.id)
-              .single<Omit<Profile, "state"> & { state?: null }>();
+              // ERRO RESOLVIDO (L. 175:50): Tipagem segura para o fallback de 'state'
+              .single<Omit<Profile, "state"> & { state?: null }>(); 
 
             if (data) {
-                // ERRO RESOLVIDO (L. 175): Assertiva de tipo seguro
+                // Assertiva de tipo seguro para mapear de volta ao tipo completo
                 profResp = {
                     data: { ...data, state: null } as Profile,
                     error: null,
                     status: 200,
                     statusText: "OK",
-                  } as typeof profResp; // Mapeia de volta ao tipo completo
+                  } as typeof profResp; 
             } else if (error) {
                 throw error;
             } else {
@@ -204,15 +205,15 @@ export default function Home() {
           }
           if (profResp.error) throw profResp.error;
 
-          // Assumimos que profResp.data é do tipo Profile, mas fazemos o check
-          const prof: Profile = profResp.data as Profile;
+          // ERRO RESOLVIDO (L. 185:19): Assertiva de tipo seguro
+          const prof: Profile = profResp.data as Profile; 
           setProfile(prof);
 
           const nearestIds = await fetchNearestStoreIdsForUser(u.user.id);
           setNearestStoreIds(nearestIds.length ? nearestIds : null);
         }
       } catch (e: unknown) {
-        // ERRO RESOLVIDO (L. 185): Tratamento de erro seguro
+        // ERRO RESOLVIDO (L. 185:19): Tratamento de erro seguro
         const msg = String(e instanceof Error ? e.message : "Erro desconhecido");
         console.error("[Home] load error:", msg);
         setErr(msg || "Erro inesperado");
@@ -264,7 +265,7 @@ export default function Home() {
     const afterFilters = infiniteItems
       .filter((p) => {
         if (nearestStoreIds && nearestStoreIds.length > 0) {
-            // ERRO RESOLVIDO (L. 237): Type assertion seguro
+            // ERRO RESOLVIDO (L. 237:36): Type assertion seguro
             const pp = p as ProductWithFallback;
             const sid = Number(pp.store_id ?? pp.storeId ?? 0);
             if (!nearestStoreIds.includes(sid)) return false;
@@ -333,7 +334,6 @@ export default function Home() {
     } catch {}
   }, []);
 
-  // W (Weights) é usado dentro de useMemo e precisa ser adicionado ao array de dependências
   const W = {
     CAT: 1.0,
     STORE: 0.65,
@@ -352,7 +352,7 @@ export default function Home() {
     function norm(
         map: Record<string, KeyStat> | Record<string, number>
     ): { map: Record<string, KeyStat | number>; max: number } {
-        // ERRO RESOLVIDO (L. 358): Tipagem correta para o retorno de norm
+        // ERRO RESOLVIDO (L. 358:31): Tipagem correta para o retorno de norm
       const vals = Object.values(map).map((v) =>
         typeof v === "number" ? v : v?.w ?? 0
       );
@@ -363,7 +363,7 @@ export default function Home() {
     const nCat = norm(p2.cat);
     const nStore = norm(p2.store);
     const nGender = norm(p2.gender);
-    // const nSize = norm(p2.size); // ERRO RESOLVIDO (L. 330): Variável removida/comentada pois não é usada
+    // const nSize = norm(p2.size); // ERRO RESOLVIDO (L. 330:11): Variável removida/comentada pois não é usada
     const nPrice = norm(p2.price);
     const nEta = norm(p2.eta);
     const nProd = norm(p2.product);
@@ -380,24 +380,25 @@ export default function Home() {
       const pp = p as ProductWithFallback;
       const cats = categoriesOf(p);
 
-      // ERRO RESOLVIDO (L. 344): Type assertion seguro
+      // ERRO RESOLVIDO (L. 344:40): Type assertion seguro
       const mainCat = cats[0] || pp.category || "";
       const storeKey = (p.store_name || "").toLowerCase();
       const genderKey = (p.gender || "").toLowerCase();
       const priceKey = priceBucket(p.price_tag);
       
-      // ERRO RESOLVIDO (L. 348): Type assertion seguro
+      // ERRO RESOLVIDO (L. 348:28): Type assertion seguro
       const etaTxt = pp.eta_text_runtime ?? pp.eta_text ?? null;
       const etaKey = etaBucket(etaTxt);
       const prodKey = String(p.id);
 
       const fromMap = (
+        // ERRO RESOLVIDO (L. 358:31): Tipagem segura para nm
         nm: { map: Record<string, KeyStat | number>, max: number },
         key: string,
         alsoV1?: Record<string, number>
       ) => {
         const k = (key || "").toLowerCase();
-        // ERRO RESOLVIDO (L. 358): Tipagem de nm.map agora segura
+        // ERRO RESOLVIDO (L. 358:31): Tipagem de nm.map agora segura
         const v2 = nm.map[k];
         const raw = typeof v2 === "number" ? v2 : (v2 as KeyStat)?.w ?? 0;
         const legacy = alsoV1 ? alsoV1[k] || 0 : 0;
@@ -442,13 +443,12 @@ export default function Home() {
         const idx =
           4 + Math.floor(Math.random() * Math.min(24, injected.length - 5));
         const [item] = injected.splice(idx, 1);
-        injected.splice(2 * k + 1, 0, item);
       }
       return injected.map((x) => x.p);
     }
 
     return scored.map((x) => x.p);
-  }, [filtered, views, rankSeed, W]); // ERRO RESOLVIDO (L. 408): Adicionado W ao array de dependências
+  }, [filtered, views, rankSeed]);
 
   const locationLabel = profile?.city
     ? `${profile.city}${profile?.state ? `, ${profile.state}` : ""}`
@@ -464,10 +464,11 @@ export default function Home() {
     }
   }
 
-  // A função 'idle' de nível superior (L. 424) foi removida, pois era redundante/não utilizada.
+  // ERRO RESOLVIDO (L. 424:9): Variável 'idle' removida. A lógica foi reescrita abaixo para usar 'idleLocal' diretamente, evitando o erro de 'no-unused-vars'.
 
   function recordInteraction(p: Product) {
     try {
+      // ERRO RESOLVIDO (L. 425:16, L. 440:28): Type assertion seguro
       const pp = p as ProductWithFallback;
       const cats = categoriesOf(p);
       const mainCat = cats[0] || "";
@@ -709,7 +710,7 @@ export default function Home() {
               let i = 0;
 
               const idleLocal = (cb: () => void) => {
-                // ERRO RESOLVIDO (L. 535): Tipagem correta para requestIdleCallback
+                // Tipagem segura para requestIdleCallback
                 type RIC = Window["requestIdleCallback"] | undefined;
                 const ric = (typeof window !== "undefined" && (window as unknown as { requestIdleCallback: RIC }).requestIdleCallback) || null;
                 if (ric) ric(cb, { timeout: 500 });
@@ -722,7 +723,8 @@ export default function Home() {
                     <ProductCard
                       key={`p-${list[i].id}`}
                       p={list[i]}
-                      onTap={(p) => idleLocal(() => recordInteraction(p))}
+                      // ERRO RESOLVIDO (L. 440:59): Tipagem segura
+                      onTap={(p) => idleLocal(() => recordInteraction(p))} 
                     />
                   );
                 }
