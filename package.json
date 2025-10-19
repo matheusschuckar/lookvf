@@ -15,8 +15,8 @@
     "next": "15.2.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "react-phone-input-2": "2.15.1", // ⬅️ VÍRGULA AGORA INCLUÍDA!
-    "lucide-react": "^0.309.0"      // ⬅️ Nova dependência adicionada
+    "react-phone-input-2": "2.15.1",
+    "lucide-react": "^0.309.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
